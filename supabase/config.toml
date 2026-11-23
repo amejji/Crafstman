@@ -1,0 +1,22 @@
+# Configuration Supabase CLI (développement local : `supabase start`).
+project_id = "strata"
+
+[api]
+schemas = ["public"]
+
+[auth]
+site_url = "strata://"
+additional_redirect_urls = ["strata://", "http://localhost:8081"]
+
+[auth.email]
+enable_signup = true
+# Connexion par code à 6 chiffres reçu par e-mail
+otp_length = 6
+otp_expiry = 3600
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[functions.generer-dossier]
+verify_jwt = true
