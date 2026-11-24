@@ -94,6 +94,7 @@ export default function MesChantiers() {
           <Bouton titre="Nouveau chantier" onPress={() => router.push('/chantier/nouveau')} style={{ flex: 1 }} />
           <Bouton titre="J'ai un code" variante="secondaire" onPress={() => router.push('/rejoindre')} style={{ flex: 1 }} />
         </View>
+        <Bouton titre="Mes documents (assurances, Kbis, URSSAF)" variante="secondaire" onPress={() => router.push('/conformite')} />
 
         {chantiers === null ? (
           <Texte doux>Chargement…</Texte>

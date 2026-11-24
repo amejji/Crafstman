@@ -101,3 +101,45 @@ export type Garanties = {
   fin_biennale: string;
   fin_decennale: string;
 };
+
+export type TypeDocEntreprise = 'decennale' | 'rc_pro' | 'kbis' | 'vigilance_urssaf' | 'rge' | 'qualibat' | 'qualifelec' | 'autre';
+
+/** Documents du coffre-fort de l'entreprise, dans l'ordre d'affichage. */
+export const DOCS_ENTREPRISE: {
+  type: TypeDocEntreprise;
+  libelle: string;
+  exige: 'tous' | 'pro' | 'facultatif';
+  /** Durée fixe en mois à partir de la date du document (sinon : date de fin saisie). */
+  dureeMois?: number;
+}[] = [
+  { type: 'decennale', libelle: 'Assurance décennale', exige: 'tous' },
+  { type: 'rc_pro', libelle: 'Responsabilité civile professionnelle', exige: 'tous' },
+  { type: 'kbis', libelle: "Kbis ou carte d'artisan", exige: 'pro', dureeMois: 3 },
+  { type: 'vigilance_urssaf', libelle: 'Attestation de vigilance URSSAF', exige: 'pro', dureeMois: 6 },
+  { type: 'rge', libelle: 'Qualification RGE', exige: 'facultatif' },
+  { type: 'qualibat', libelle: 'Qualibat', exige: 'facultatif' },
+  { type: 'qualifelec', libelle: 'Qualifelec', exige: 'facultatif' },
+];
+
+export const LIBELLE_DOC_ENTREPRISE = Object.fromEntries(DOCS_ENTREPRISE.map((d) => [d.type, d.libelle])) as Record<
+  TypeDocEntreprise,
+  string
+>;
+
+export type TypeJustificatif = 'consuel' | 'etancheite_air' | 'attestation_re2020' | 'pv_reception' | 'autre';
+
+export const LIBELLE_JUSTIFICATIF: Record<TypeJustificatif, string> = {
+  consuel: 'Attestation Consuel',
+  etancheite_air: "Test d'étanchéité à l'air",
+  attestation_re2020: 'Attestation RE2020',
+  pv_reception: 'PV de réception',
+  autre: 'Autre justificatif',
+};
+
+export type LigneConformite = {
+  organisation_id: string;
+  entreprise: string;
+  type_doc: TypeDocEntreprise;
+  fin: string | null;
+  statut: 'valide' | 'expire_bientot' | 'expire' | 'manquant';
+};

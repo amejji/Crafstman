@@ -14,13 +14,16 @@ Un seul code pour l'iPhone, Android et le navigateur (espace web des architectes
 | Scanner une pose (code-barres → pièce → photo → valider, hors connexion) | Artisan | Parcours 1 |
 | Dossier : complétude, documents manquants par entreprise et par produit, relance, réception, PDF | Tous | Parcours 2 |
 | Réserves : saisie et levée avec photo | Architecte, maître d'ouvrage, artisan | Parcours 2 |
+| Mes documents : coffre-fort de l'entreprise (décennale, RC pro, Kbis, vigilance URSSAF, RGE, Qualibat, Qualifelec), alerte 30 jours avant expiration | Artisan | Conformité |
+| Conformité du chantier : entreprises en règle ou non, relance, justificatifs (Consuel, étanchéité à l'air, RE2020, PV de réception) | Tous | Conformité |
 | Paiements : demande par l'artisan, validation par le client | Artisan, client | Parcours 3 (versement réel en P2) |
 | Inviter par lien ou par code de 8 caractères (rôle et lot du marché, valable 14 jours) | Tous | — |
 | Rejoindre un chantier avec un code (« J'ai un code ») | Tous | — |
 
 Les règles métier sont appliquées par la base (voir `../supabase`), pas seulement par l'écran :
 un utilisateur ne voit que ses chantiers, seul le maître d'ouvrage prononce la réception,
-le solde reste bloqué tant que le dossier est incomplet ou que des réserves sont ouvertes.
+le solde reste bloqué tant que le dossier est incomplet, que des réserves sont ouvertes, qu'une entreprise
+n'est pas en règle ou (marché pro) qu'un justificatif de chantier manque.
 
 ## Démarrer en local
 
@@ -38,7 +41,7 @@ Sur le web, le scan propose la saisie du code à la main.
 ## Vérifications
 
 ```bash
-npm test            # fonctions pures (EAN, montants des jalons, SIRET)
+npm test            # fonctions pures (EAN, montants des jalons, SIRET, dates de validité des attestations)
 npm run typecheck   # TypeScript
 npm run lint        # ESLint (config Expo)
 ```

@@ -10,6 +10,7 @@ export default function Compte() {
   return (
     <Ecran>
       <Texte doux>Connecté avec {session?.user.email}</Texte>
+      <Bouton titre="Mes documents (assurances, Kbis, URSSAF)" variante="secondaire" onPress={() => router.push('/conformite')} />
       <FormulaireProfil apresEnregistrement={() => router.back()} />
       <Bouton titre="Se déconnecter" variante="secondaire" onPress={() => supabase.auth.signOut()} />
     </Ecran>

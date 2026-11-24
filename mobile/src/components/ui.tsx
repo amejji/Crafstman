@@ -172,3 +172,20 @@ const styles = StyleSheet.create({
   jaugeBarre: { height: '100%', borderRadius: 5 },
   bandeau: { backgroundColor: C.accentDoux, borderRadius: R.s, padding: S.m },
 });
+
+const TONS_STATUT = {
+  valide: { fond: C.accentDoux, encre: C.ok },
+  expire_bientot: { fond: '#FBF0D9', encre: '#8A5A00' },
+  expire: { fond: C.alerteDoux, encre: C.alerte },
+  manquant: { fond: C.alerteDoux, encre: C.alerte },
+} as const;
+
+/** Étiquette de statut d'un document : valide, expire bientôt, expiré, manquant. */
+export function Pastille({ statut, texte }: { statut: keyof typeof TONS_STATUT; texte: string }) {
+  const t = TONS_STATUT[statut];
+  return (
+    <View style={{ backgroundColor: t.fond, borderRadius: 999, paddingHorizontal: S.s, paddingVertical: 3, alignSelf: 'flex-start' }}>
+      <Text style={{ color: t.encre, fontSize: 13, fontWeight: '600' }}>{texte}</Text>
+    </View>
+  );
+}

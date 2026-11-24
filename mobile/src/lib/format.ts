@@ -38,3 +38,31 @@ export function couleurTaux(taux: number): 'ok' | 'moyen' | 'bas' {
   if (taux >= 60) return 'moyen';
   return 'bas';
 }
+
+/** Ajoute des mois à une date AAAA-MM-JJ (le 31 devient le dernier jour du mois si besoin). */
+export function ajouterMois(iso: string, mois: number): string {
+  const [a, m, j] = iso.split('-').map(Number);
+  const fin = new Date(Date.UTC(a, m - 1 + mois + 1, 0)).getUTCDate();
+  const d = new Date(Date.UTC(a, m - 1 + mois, Math.min(j, fin)));
+  return d.toISOString().slice(0, 10);
+}
+
+/** « 15/03/2026 » → « 2026-03-15 », ou null si la date n'existe pas. */
+export function dateSaisie(texte: string): string | null {
+  const m = texte.trim().match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  if (!m) return null;
+  const iso = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  const d = new Date(`${iso}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== iso ? null : iso;
+}
+
+export type StatutDocument = 'valide' | 'expire_bientot' | 'expire' | 'manquant';
+
+/** Même règle que la base : expiré avant aujourd'hui, alerte 30 jours avant. */
+export function statutDocument(fin: string | null, aujourdhui: string): StatutDocument {
+  if (!fin) return 'manquant';
+  if (fin < aujourdhui) return 'expire';
+  const [a, m, j] = aujourdhui.split('-').map(Number);
+  const dans30 = new Date(Date.UTC(a, m - 1, j + 30)).toISOString().slice(0, 10);
+  return fin <= dans30 ? 'expire_bientot' : 'valide';
+}

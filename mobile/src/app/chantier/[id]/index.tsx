@@ -73,6 +73,7 @@ export default function VueChantier() {
       <View style={{ flexDirection: 'row', gap: S.s, flexWrap: 'wrap' }}>
         <Bouton titre="Dossier" variante="secondaire" onPress={() => router.push(`/chantier/${id}/dossier`)} style={{ flexGrow: 1 }} />
         <Bouton titre="Réserves" variante="secondaire" onPress={() => router.push(`/chantier/${id}/reserves`)} style={{ flexGrow: 1 }} />
+        <Bouton titre="Conformité" variante="secondaire" onPress={() => router.push(`/chantier/${id}/conformite`)} style={{ flexGrow: 1 }} />
         <Bouton titre="Paiements" variante="secondaire" onPress={() => router.push(`/chantier/${id}/paiements`)} style={{ flexGrow: 1 }} />
         <Bouton titre="Inviter" variante="secondaire" onPress={() => router.push(`/chantier/${id}/inviter`)} style={{ flexGrow: 1 }} />
       </View>

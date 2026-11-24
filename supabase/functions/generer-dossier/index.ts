@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
   if (errC) return json({ error: errC.message }, 500);
   if (!chantier) return json({ error: 'Chantier introuvable ou accès refusé' }, 404);
 
-  const [pieces, poses, garanties, completude, membres, manquants] = await Promise.all([
+  const [pieces, poses, garanties, completude, membres, manquants, conformite, justificatifs] = await Promise.all([
     sb.from('pieces').select('id, nom, ordre').eq('chantier_id', chantierId).order('ordre'),
     sb
       .from('poses')
@@ -122,8 +122,10 @@ Deno.serve(async (req) => {
     sb.from('chantiers_completude').select('*').eq('chantier_id', chantierId).maybeSingle(),
     sb.from('membres_chantier').select('role, profil_id, lot_marche, profils(nom, email), organisations(nom)').eq('chantier_id', chantierId),
     sb.from('pieces_manquantes').select('pose_id, manquant').eq('chantier_id', chantierId),
+    sb.from('conformite').select('organisation_id, entreprise, type_doc, fin, statut').eq('chantier_id', chantierId),
+    sb.from('justificatifs_chantier').select('type, nom, storage_path, created_at').eq('chantier_id', chantierId).order('created_at'),
   ]);
-  for (const r of [pieces, poses, garanties, completude, membres, manquants]) {
+  for (const r of [pieces, poses, garanties, completude, membres, manquants, conformite, justificatifs]) {
     if (r.error) return json({ error: r.error.message }, 500);
   }
 
@@ -170,6 +172,56 @@ Deno.serve(async (req) => {
   }
   w.y -= 8;
 
+  // Assurances et attestations : présence et dates contrôlées par Strata, pas l'authenticité.
+  const LIB_ENTREPRISE: Record<string, string> = {
+    decennale: 'Assurance décennale', rc_pro: 'RC professionnelle', kbis: "Kbis ou carte d'artisan",
+    vigilance_urssaf: 'Attestation de vigilance URSSAF', rge: 'RGE', qualibat: 'Qualibat', qualifelec: 'Qualifelec', autre: 'Autre',
+  };
+  const LIB_STATUT: Record<string, string> = { valide: 'valide', expire_bientot: 'expire bientôt', expire: 'expiré', manquant: 'manquant' };
+  const annexesEntreprises: { titre: string; bucket: string; path: string }[] = [];
+  w.texte('Assurances et attestations des entreprises', { taille: 13, gras: true, apres: 2 });
+  const lignesConf = conformite.data ?? [];
+  if (!lignesConf.length) w.texte('Aucune entreprise sur ce chantier.', { couleur: GRIS });
+  const orgas = [...new Set(lignesConf.map((l) => l.organisation_id))];
+  const { data: fichiersEntreprises } = orgas.length
+    ? await sb.from('documents_entreprise').select('organisation_id, type, storage_path, date_emission, date_fin').in('organisation_id', orgas)
+    : { data: [] };
+  for (const org of orgas) {
+    const ls = lignesConf.filter((l) => l.organisation_id === org);
+    const enRegle = ls.every((l) => l.statut === 'valide' || l.statut === 'expire_bientot');
+    w.texte(`${ls[0].entreprise} – ${enRegle ? 'en règle' : 'à régulariser'}`, { gras: true, couleur: enRegle ? ACCENT : rgb(0.7, 0.2, 0.1) });
+    for (const l of ls) {
+      w.texte(`${LIB_ENTREPRISE[l.type_doc] ?? l.type_doc} : ${LIB_STATUT[l.statut] ?? l.statut}${l.fin ? `, valable jusqu'au ${dateFr(l.fin)}` : ''}`,
+        { taille: 9, x: MARGE + 8, couleur: l.statut === 'manquant' || l.statut === 'expire' ? rgb(0.7, 0.2, 0.1) : ENCRE });
+      // Joindre le document le plus récent de ce type
+      const f = (fichiersEntreprises ?? [])
+        .filter((x) => x.organisation_id === org && x.type === l.type_doc)
+        .sort((a, b) => a.date_emission.localeCompare(b.date_emission))
+        .pop();
+      if (f) annexesEntreprises.push({ titre: `${LIB_ENTREPRISE[l.type_doc]} – ${ls[0].entreprise}`, bucket: 'entreprises', path: f.storage_path });
+    }
+    w.y -= 4;
+  }
+  w.texte("Strata contrôle la présence et les dates des documents, pas leur authenticité. L'attestation de vigilance se vérifie sur le site de l'URSSAF.",
+    { taille: 8, couleur: GRIS, apres: 8 });
+
+  const LIB_JUSTIF: Record<string, string> = {
+    consuel: 'Attestation Consuel', etancheite_air: "Test d'étanchéité à l'air", attestation_re2020: 'Attestation RE2020',
+    pv_reception: 'PV de réception', autre: 'Autre justificatif',
+  };
+  const listeJustifs = justificatifs.data ?? [];
+  if (estPro || listeJustifs.length) {
+    w.texte('Justificatifs du chantier', { taille: 13, gras: true, apres: 2 });
+    const attendus = estPro ? ['consuel', 'etancheite_air', 'attestation_re2020', 'pv_reception'] : [];
+    for (const t of [...new Set([...attendus, ...listeJustifs.map((j) => j.type)])]) {
+      const j = listeJustifs.filter((x) => x.type === t).pop();
+      w.texte(`${LIB_JUSTIF[t] ?? t} : ${j ? `fourni le ${dateFr(j.created_at)} (joint en annexe)` : 'manquant'}`,
+        { taille: 9, x: MARGE + 8, couleur: j ? ENCRE : rgb(0.7, 0.2, 0.1) });
+      if (j) annexesEntreprises.push({ titre: LIB_JUSTIF[t] ?? t, bucket: 'chantiers', path: j.storage_path });
+    }
+    w.y -= 8;
+  }
+
   // Sans types générés, supabase-js ne sait pas que les relations sont simples.
   // deno-lint-ignore no-explicit-any
   const listePoses = (poses.data ?? []) as any[];
@@ -196,7 +248,7 @@ Deno.serve(async (req) => {
   const groupes = estPro
     ? [...parPiece].sort(([a], [b]) => a.localeCompare(b, 'fr', { numeric: true }))
     : [...parPiece];
-  const annexes: { titre: string; bucket: string; path: string }[] = [];
+  const annexes: { titre: string; bucket: string; path: string }[] = [...annexesEntreprises];
   const dejaJoints = new Set<string>();
   for (const [piece, liste] of groupes) {
     w.texte(piece, { taille: 11, gras: true, couleur: ACCENT, apres: 2 });
@@ -263,19 +315,31 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Annexes : documents des produits (fiches techniques, notices, FDES…)
+  // Annexes : attestations, justificatifs, puis documents des produits (fiches techniques, notices, FDES…).
+  // Un PDF est recopié tel quel ; une photo de document tient sur une page.
   for (const a of annexes) {
     const { data: blob } = await sb.storage.from(a.bucket).download(a.path);
     if (!blob) continue;
     try {
-      const src = await PDFDocument.load(new Uint8Array(await blob.arrayBuffer()), { ignoreEncryption: true });
+      const octetsAnnexe = new Uint8Array(await blob.arrayBuffer());
+      const estPdf = octetsAnnexe[0] === 0x25 && octetsAnnexe[1] === 0x50; // « %P »
+      const estPng = octetsAnnexe[0] === 0x89 && octetsAnnexe[1] === 0x50;
+      const estJpg = octetsAnnexe[0] === 0xff && octetsAnnexe[1] === 0xd8;
+      if (!estPdf && !estPng && !estJpg) continue;
       const sep = pdf.addPage(A4);
       sep.drawText(propre('Annexe'), { x: MARGE, y: A4[1] - MARGE - 10, size: 10, font: bold, color: ACCENT });
       sep.drawText(propre(a.titre).slice(0, 80), { x: MARGE, y: A4[1] - MARGE - 34, size: 14, font: bold, color: ENCRE });
-      const pages = await pdf.copyPages(src, src.getPageIndices());
-      pages.forEach((pg) => pdf.addPage(pg));
+      if (estPdf) {
+        const src = await PDFDocument.load(octetsAnnexe, { ignoreEncryption: true });
+        const pages = await pdf.copyPages(src, src.getPageIndices());
+        pages.forEach((pg) => pdf.addPage(pg));
+      } else {
+        const img = estPng ? await pdf.embedPng(octetsAnnexe) : await pdf.embedJpg(octetsAnnexe);
+        const dims = img.scaleToFit(A4[0] - 2 * MARGE, A4[1] - 2 * MARGE - 60);
+        sep.drawImage(img, { x: MARGE, y: A4[1] - MARGE - 60 - dims.height, width: dims.width, height: dims.height });
+      }
     } catch {
-      // document non PDF ou corrompu : il reste listé dans le dossier
+      // fichier corrompu : il reste listé dans le dossier
     }
   }
 

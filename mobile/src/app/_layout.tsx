@@ -45,12 +45,14 @@ function Navigation() {
       <Stack.Protected guard={pret}>
         <Stack.Screen name="index" options={{ title: 'Mes chantiers' }} />
         <Stack.Screen name="compte" options={{ title: 'Mon compte' }} />
+        <Stack.Screen name="conformite" options={{ title: 'Mes documents' }} />
         <Stack.Screen name="rejoindre" options={{ title: 'Rejoindre un chantier', presentation: 'modal' }} />
         <Stack.Screen name="chantier/nouveau" options={{ title: 'Nouveau chantier', presentation: 'modal' }} />
         <Stack.Screen name="chantier/[id]/index" options={{ title: 'Chantier' }} />
         <Stack.Screen name="chantier/[id]/scanner" options={{ title: 'Scanner une pose', headerShown: false }} />
         <Stack.Screen name="chantier/[id]/dossier" options={{ title: 'Dossier' }} />
         <Stack.Screen name="chantier/[id]/reserves" options={{ title: 'Réserves' }} />
+        <Stack.Screen name="chantier/[id]/conformite" options={{ title: 'Conformité' }} />
         <Stack.Screen name="chantier/[id]/paiements" options={{ title: 'Paiements' }} />
         <Stack.Screen name="chantier/[id]/inviter" options={{ title: 'Inviter', presentation: 'modal' }} />
       </Stack.Protected>

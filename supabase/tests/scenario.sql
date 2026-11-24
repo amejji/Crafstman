@@ -146,6 +146,14 @@ from unnest(array['fiche_technique', 'notice', 'avis_technique', 'fdes', 'garant
 do $$ begin assert (select taux from chantiers_completude) = 100, 'dossier complet'; end $$;
 select pg_temp.attendre_erreur($$select demander_paiement((select id from jalons where ordre = 3))$$, 'réserves');
 update reserves set statut = 'levee', levee_le = now();
+-- Conformité (voir conformite.sql pour le détail) : l'entreprise et le chantier doivent être en règle
+select pg_temp.attendre_erreur($$select demander_paiement((select id from jalons where ordre = 3))$$, 'pas en règle');
+insert into documents_entreprise (organisation_id, type, storage_path, date_emission, date_fin)
+select mon_organisation(), t, t || '.pdf', current_date - 15, case when t in ('kbis', 'vigilance_urssaf') then null else current_date + 300 end
+from unnest(array['decennale', 'rc_pro', 'kbis', 'vigilance_urssaf']::type_doc_entreprise[]) as t;
+insert into justificatifs_chantier (chantier_id, type, storage_path)
+select :'chantier', t, :'chantier' || '/justificatifs/' || t || '.pdf'
+from unnest(array['consuel', 'etancheite_air', 'attestation_re2020', 'pv_reception']::type_justificatif[]) as t;
 select demander_paiement((select id from jalons where ordre = 3));
 select pg_temp.attendre_erreur($$select demander_paiement((select id from jalons where ordre = 4))$$, 'un an');
 select pg_temp.attendre_erreur($$select valider_jalon((select id from jalons where ordre = 3))$$, 'client');

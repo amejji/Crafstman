@@ -28,3 +28,26 @@ test('couleur de la jauge', () => {
   assert.equal(couleurTaux(75), 'moyen');
   assert.equal(couleurTaux(10), 'bas');
 });
+
+import { ajouterMois, dateSaisie, statutDocument } from '../src/lib/format.ts';
+
+test('ajout de mois (Kbis 3 mois, vigilance 6 mois)', () => {
+  assert.equal(ajouterMois('2026-01-15', 3), '2026-04-15');
+  assert.equal(ajouterMois('2026-08-31', 6), '2027-02-28');
+  assert.equal(ajouterMois('2026-11-30', 3), '2027-02-28');
+});
+
+test('date saisie JJ/MM/AAAA', () => {
+  assert.equal(dateSaisie('5/3/2026'), '2026-03-05');
+  assert.equal(dateSaisie('15.03.2026'), '2026-03-15');
+  assert.equal(dateSaisie('31/02/2026'), null);
+  assert.equal(dateSaisie('2026-03-15'), null);
+});
+
+test('statut d’un document', () => {
+  assert.equal(statutDocument(null, '2026-11-24'), 'manquant');
+  assert.equal(statutDocument('2026-11-23', '2026-11-24'), 'expire');
+  assert.equal(statutDocument('2026-11-24', '2026-11-24'), 'expire_bientot');
+  assert.equal(statutDocument('2026-12-24', '2026-11-24'), 'expire_bientot');
+  assert.equal(statutDocument('2026-12-25', '2026-11-24'), 'valide');
+});
