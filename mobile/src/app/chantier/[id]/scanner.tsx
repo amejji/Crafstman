@@ -38,6 +38,8 @@ export default function Scanner() {
   const [enregistrement, setEnregistrement] = useState(false);
   const [message, setMessage] = useState<{ texte: string; ton: 'info' | 'alerte' } | null>(null);
   const [compteur, setCompteur] = useState(0);
+  // Caméra refusée ou absente : on saisit les codes à la main, sans photo.
+  const [sansCamera, setSansCamera] = useState(false);
 
   const pieces = useMemo(() => donnees?.pieces ?? [], [donnees]);
   const pieceChoisie = pieceId ?? pieces[0]?.id ?? null;
@@ -71,6 +73,7 @@ export default function Scanner() {
 
   const photographier = async (): Promise<string | null> => {
     try {
+      if (!avecCamera) return null;
       const photo = await camera.current?.takePictureAsync({ quality: 0.5, skipProcessing: Platform.OS === 'android' });
       return photo?.uri ?? null;
     } catch {
@@ -115,36 +118,40 @@ export default function Scanner() {
     }
   };
 
-  if (!permission) return <Ecran><Texte doux>Accès à la caméra…</Texte></Ecran>;
-  if (!permission.granted) {
+  const avecCamera = !!permission?.granted && !sansCamera;
+  if (!permission && !sansCamera) return <Ecran><Texte doux>Accès à la caméra…</Texte></Ecran>;
+  if (!avecCamera && !sansCamera) {
     return (
       <Ecran>
         <Texte gras>Strata a besoin de la caméra</Texte>
         <Texte doux>Pour lire le code-barres des matériaux et photographier chaque pose.</Texte>
         <Bouton titre="Autoriser la caméra" onPress={demanderPermission} />
+        <Bouton titre="Saisir les codes à la main" variante="secondaire" onPress={() => setSansCamera(true)} />
         <Bouton titre="Retour" variante="secondaire" onPress={() => router.back()} />
       </Ecran>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#000' }}>
-      <CameraView
-        ref={camera}
-        style={StyleSheet.absoluteFill}
-        facing="back"
-        barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e'] }}
-        onBarcodeScanned={etat.etape === 'scan' ? surCode : undefined}
-      />
-      <SafeAreaView style={{ flex: 1, justifyContent: 'space-between' }} edges={['top', 'bottom']}>
+    <View style={{ flex: 1, backgroundColor: avecCamera ? '#000' : C.fond }}>
+      {avecCamera ? (
+        <CameraView
+          ref={camera}
+          style={StyleSheet.absoluteFill}
+          facing="back"
+          barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e'] }}
+          onBarcodeScanned={etat.etape === 'scan' ? surCode : undefined}
+        />
+      ) : null}
+      <SafeAreaView style={{ flex: 1, justifyContent: avecCamera ? 'space-between' : 'flex-start' }} edges={['top', 'bottom']}>
         <View style={styles.haut}>
           <Pressable accessibilityRole="button" onPress={() => router.back()} hitSlop={12}>
-            <Text style={styles.hautTexte}>Fermer</Text>
+            <Text style={avecCamera ? styles.hautTexte : styles.hautSansCamera}>Fermer</Text>
           </Pressable>
-          <Text style={styles.hautTexte}>{compteur ? `${compteur} pose${compteur > 1 ? 's' : ''} ce passage` : donnees?.chantier.nom}</Text>
+          <Text style={avecCamera ? styles.hautTexte : styles.hautSansCamera}>{compteur ? `${compteur} pose${compteur > 1 ? 's' : ''} ce passage` : donnees?.chantier.nom}</Text>
         </View>
 
-        {etat.etape === 'scan' ? <View style={styles.viseur} pointerEvents="none" /> : null}
+        {etat.etape === 'scan' && avecCamera ? <View style={styles.viseur} pointerEvents="none" /> : null}
 
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView style={styles.panneau} contentContainerStyle={{ gap: S.m, padding: S.l }} keyboardShouldPersistTaps="handled">
@@ -152,11 +159,11 @@ export default function Scanner() {
 
             {etat.etape === 'scan' ? (
               <>
-                <Texte gras>Visez le code-barres du produit</Texte>
+                <Texte gras>{avecCamera ? 'Visez le code-barres du produit' : 'Saisissez le code-barres du produit'}</Texte>
                 <View style={{ flexDirection: 'row', gap: S.s, alignItems: 'flex-end' }}>
                   <View style={{ flex: 1 }}>
                     <Champ
-                      libelle="Ou saisissez le code"
+                      libelle={avecCamera ? 'Ou saisissez le code' : 'Code-barres (EAN)'}
                       value={codeSaisi}
                       onChangeText={(t) => setCodeSaisi(t.replace(/\D/g, ''))}
                       keyboardType="number-pad"
@@ -211,7 +218,7 @@ export default function Scanner() {
                   ))}
                 </Puces>
                 <Champ libelle="N° de lot (facultatif)" value={lot} onChangeText={setLot} />
-                <Bouton titre="Photo et valider" onPress={valider} chargement={enregistrement} style={{ minHeight: 60 }} />
+                <Bouton titre={avecCamera ? 'Photo et valider' : 'Valider'} onPress={valider} chargement={enregistrement} style={{ minHeight: 60 }} />
                 <Bouton titre="Annuler" variante="secondaire" onPress={() => setEtat({ etape: 'scan' })} />
               </>
             ) : null}
@@ -225,6 +232,7 @@ export default function Scanner() {
 const styles = StyleSheet.create({
   haut: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: S.l, paddingVertical: S.s },
   hautTexte: { color: '#fff', fontSize: 16, fontWeight: '600', textShadowColor: '#000', textShadowRadius: 4 },
+  hautSansCamera: { color: C.accent, fontSize: 16, fontWeight: '600' },
   viseur: { alignSelf: 'center', width: '75%', maxWidth: 360, height: 140, borderWidth: 3, borderColor: '#fff', borderRadius: R.m, opacity: 0.9 },
   panneau: { backgroundColor: C.fond, borderTopLeftRadius: R.l, borderTopRightRadius: R.l, maxHeight: 460 },
   produit: { fontSize: 19, fontWeight: '700', color: C.encre },
