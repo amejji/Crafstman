@@ -39,7 +39,13 @@ do $$ begin
 end $$;
 
 -- 2. Invitations
-insert into invitations (chantier_id, role, jeton) values (:'chantier', 'architecte', 'jeton-archi'), (:'chantier', 'maitre_ouvrage', 'jeton-mo');
+insert into invitations (chantier_id, role, jeton) values (:'chantier', 'architecte', 'jeton-archi');
+-- Le maître d'ouvrage rejoindra avec le code court, tapé à la main
+insert into invitations (chantier_id, role) values (:'chantier', 'maitre_ouvrage') returning code as code_mo \gset
+insert into invitations (chantier_id, role, lot_marche) values (:'chantier', 'artisan', 'Lot 05 – Carrelage') returning code as code_carreleur \gset
+do $$ begin
+  assert (select bool_and(code ~ '^[A-HJKMNP-Z2-9]{8}$') from invitations), 'codes de 8 caractères sans ambiguïté';
+end $$;
 
 -- 3. L'intrus ne voit rien et ne peut rien écrire
 select pg_temp.devenir('00000000-0000-0000-0000-00000000000d');
@@ -59,7 +65,7 @@ select '11111111-1111-1111-1111-111111111111', :'chantier', (select id from piec
 from produits p where ean = '3760000000017';
 insert into poses (id, chantier_id, produit_id) select '11111111-1111-1111-1111-111111111111', :'chantier', id from produits where ean = '3760000000017'
 on conflict (id) do nothing;
-insert into poses (id, chantier_id, designation_saisie, marque_saisie, lot)
+insert into poses (id, chantier_id, designation_saisie, marque_saisie, numero_lot)
 values ('22222222-2222-2222-2222-222222222222', :'chantier', 'Bande à joint', 'Inconnue', 'L42');
 -- Pose scannée hors connexion : seul le code part, le produit est retrouvé à l'arrivée
 insert into poses (id, chantier_id, ean_scanne) values ('33333333-3333-3333-3333-333333333333', :'chantier', '3760000000017');
@@ -67,9 +73,24 @@ do $$ begin
   assert (select produit_id is not null from poses where id = '33333333-3333-3333-3333-333333333333'), 'produit retrouvé par son EAN';
 end $$;
 delete from poses where id = '33333333-3333-3333-3333-333333333333';
+-- Produit inconnu saisi par l'artisan : il entre dans la base, non vérifié, et le scan suivant le retrouve
+insert into poses (id, chantier_id, ean_scanne, designation_saisie, marque_saisie)
+values ('44444444-4444-4444-4444-444444444444', :'chantier', '4006381333931', 'Colle carrelage C2', 'Inconnue');
+insert into poses (id, chantier_id, ean_scanne) values ('55555555-5555-5555-5555-555555555555', :'chantier', '4006381333931');
+do $$ begin
+  assert (select verifie = false and ajoute_par = auth.uid() from produits where ean = '4006381333931'), 'produit ajouté, non vérifié';
+  assert (select count(distinct produit_id) = 1 and bool_and(produit_id is not null) from poses
+          where id in ('44444444-4444-4444-4444-444444444444', '55555555-5555-5555-5555-555555555555')), 'le second scan retrouve le produit';
+end $$;
+delete from poses where id in ('44444444-4444-4444-4444-444444444444', '55555555-5555-5555-5555-555555555555');
 do $$ begin
   assert (select count(*) from poses) = 2, 'la pose renvoyée n''est pas doublée';
-  assert (select taux from chantiers_completude) = 0, 'aucun document : dossier à 0 %';
+  -- Marché pro : fiche technique, notice, avis technique, FDES et garantie par pose.
+  -- Seule la garantie du BA13 est connue (120 mois) : 1 document sur 10.
+  assert (select taux from chantiers_completude) = 10, 'dossier à 10 %';
+  assert (select count(*) from pieces_manquantes) = 9, 'neuf documents manquants';
+  assert (select count(*) from pieces_manquantes where pose_id = '22222222-2222-2222-2222-222222222222' and manquant = 'garantie') = 1,
+    'garantie manquante pour le produit saisi à la main';
 end $$;
 insert into storage.objects (bucket_id, name) values ('chantiers', :'chantier' || '/poses/1.jpg');
 select pg_temp.attendre_erreur($$insert into storage.objects (bucket_id, name) values ('chantiers', '99999999-9999-9999-9999-999999999999/x.jpg')$$, 'row-level security');
@@ -83,8 +104,16 @@ select pg_temp.attendre_erreur(format($$select prononcer_reception(%L)$$, :'chan
 select pg_temp.attendre_erreur(format($$update chantiers set date_reception = current_date where id = %L$$, :'chantier'), 'prononcer_reception');
 
 select pg_temp.devenir('00000000-0000-0000-0000-00000000000c');
-select accepter_invitation('jeton-mo');
+select accepter_invitation(lower(substr(:'code_mo', 1, 4) || ' ' || substr(:'code_mo', 5)));
+do $$ begin assert (select count(*) from chantiers) = 1, 'le maître d''ouvrage a rejoint avec le code'; end $$;
 select pg_temp.attendre_erreur($$select accepter_invitation('jeton-archi')$$, 'déjà utilisée');
+
+-- Le carreleur rejoint avec son code : son lot du marché le suit
+select pg_temp.devenir('00000000-0000-0000-0000-00000000000d');
+select accepter_invitation(:'code_carreleur');
+do $$ begin
+  assert (select lot_marche from membres_chantier where profil_id = auth.uid()) = 'Lot 05 – Carrelage', 'lot du marché repris';
+end $$;
 
 -- 6. Paiements : acompte libre, solde bloqué tant que tout n'est pas en ordre
 select pg_temp.devenir('00000000-0000-0000-0000-00000000000a');
@@ -101,9 +130,19 @@ select pg_temp.devenir('00000000-0000-0000-0000-00000000000a');
 select pg_temp.attendre_erreur($$select demander_paiement((select id from jalons where ordre = 3))$$, 'incomplet');
 -- Les documents arrivent (déposés par l'administrateur pour le produit, par l'artisan pour la pose saisie à la main)
 reset role;
-insert into documents (produit_id, type, nom, storage_path) select id, 'fiche_technique', 'FT', id || '/ft.pdf' from produits where ean = '3760000000017';
+insert into documents (produit_id, type, nom, storage_path)
+select id, t, t::text, id || '/' || t || '.pdf'
+from produits, unnest(array['fiche_technique', 'notice', 'avis_technique', 'fdes']::type_document[]) as t
+where ean = '3760000000017';
 select pg_temp.devenir('00000000-0000-0000-0000-00000000000a');
-insert into documents (pose_id, type, nom, storage_path) values ('22222222-2222-2222-2222-222222222222', 'notice', 'Notice', :'chantier' || '/docs/n.pdf');
+do $$ begin
+  assert (select poses_completes from chantiers_completude) = 1, 'une pose sur deux complète';
+  assert (select taux from chantiers_completude) = 50, 'dossier à 50 %';
+end $$;
+select pg_temp.attendre_erreur($$select demander_paiement((select id from jalons where ordre = 3))$$, 'incomplet');
+insert into documents (pose_id, type, nom, storage_path)
+select '22222222-2222-2222-2222-222222222222', t, t::text, :'chantier' || '/docs/' || t || '.pdf'
+from unnest(array['fiche_technique', 'notice', 'avis_technique', 'fdes', 'garantie']::type_document[]) as t;
 do $$ begin assert (select taux from chantiers_completude) = 100, 'dossier complet'; end $$;
 select pg_temp.attendre_erreur($$select demander_paiement((select id from jalons where ordre = 3))$$, 'réserves');
 update reserves set statut = 'levee', levee_le = now();

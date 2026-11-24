@@ -111,18 +111,19 @@ Deno.serve(async (req) => {
   if (errC) return json({ error: errC.message }, 500);
   if (!chantier) return json({ error: 'Chantier introuvable ou accès refusé' }, 404);
 
-  const [pieces, poses, garanties, completude, membres] = await Promise.all([
+  const [pieces, poses, garanties, completude, membres, manquants] = await Promise.all([
     sb.from('pieces').select('id, nom, ordre').eq('chantier_id', chantierId).order('ordre'),
     sb
       .from('poses')
-      .select('id, piece_id, produit_id, designation_saisie, marque_saisie, lot, posee_le, photo_path, organisations(nom), produits(designation, marque, ean, garantie_fabricant_mois, entretien, documents(id, type, nom, storage_path)), documents(id, type, nom, storage_path)')
+      .select('id, piece_id, produit_id, designation_saisie, marque_saisie, numero_lot, auteur_id, posee_le, photo_path, organisations(nom), produits(designation, marque, ean, garantie_fabricant_mois, entretien, documents(id, type, nom, storage_path)), documents(id, type, nom, storage_path)')
       .eq('chantier_id', chantierId)
       .order('posee_le'),
     sb.from('garanties').select('*').eq('chantier_id', chantierId).maybeSingle(),
     sb.from('chantiers_completude').select('*').eq('chantier_id', chantierId).maybeSingle(),
-    sb.from('membres_chantier').select('role, profils(nom, email), organisations(nom)').eq('chantier_id', chantierId),
+    sb.from('membres_chantier').select('role, profil_id, lot_marche, profils(nom, email), organisations(nom)').eq('chantier_id', chantierId),
+    sb.from('pieces_manquantes').select('pose_id, manquant').eq('chantier_id', chantierId),
   ]);
-  for (const r of [pieces, poses, garanties, completude, membres]) {
+  for (const r of [pieces, poses, garanties, completude, membres, manquants]) {
     if (r.error) return json({ error: r.error.message }, 500);
   }
 
@@ -164,7 +165,8 @@ Deno.serve(async (req) => {
   for (const m of membres.data ?? []) {
     // deno-lint-ignore no-explicit-any
     const mm = m as any;
-    w.texte(`${ROLES[mm.role] ?? mm.role} : ${mm.organisations?.nom ?? mm.profils?.nom ?? mm.profils?.email ?? ''}`);
+    const qui = mm.organisations?.nom ?? mm.profils?.nom ?? mm.profils?.email ?? '';
+    w.texte(`${ROLES[mm.role] ?? mm.role} : ${qui}${mm.lot_marche ? ` (${mm.lot_marche})` : ''}`);
   }
   w.y -= 8;
 
@@ -172,18 +174,31 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   const listePoses = (poses.data ?? []) as any[];
 
-  // Matériaux posés, par pièce
-  w.texte('Matériaux posés', { taille: 13, gras: true, apres: 4 });
+  // Matériaux posés : le DOE est classé par lot du marché (corps d'état), le carnet par pièce.
+  w.texte(estPro ? 'Matériaux posés, par lot' : 'Matériaux posés, par pièce', { taille: 13, gras: true, apres: 4 });
   const nomsPieces = new Map((pieces.data ?? []).map((p) => [p.id, p.nom] as const));
+  // deno-lint-ignore no-explicit-any
+  const membreDe = new Map((membres.data ?? []).map((m: any) => [m.profil_id, m] as const));
+  const manquantsPar = new Map<string, string[]>();
+  for (const m of manquants.data ?? []) {
+    manquantsPar.set(m.pose_id, [...(manquantsPar.get(m.pose_id) ?? []), LIBELLES_DOC[m.manquant] ?? m.manquant]);
+  }
   // deno-lint-ignore no-explicit-any
   const parPiece = new Map<string, any[]>();
   for (const p of listePoses) {
-    const cle = (p.piece_id && nomsPieces.get(p.piece_id)) || 'Sans pièce';
+    const auteur = membreDe.get(p.auteur_id);
+    const cle = estPro
+      ? auteur?.lot_marche || (p.organisations?.nom ? `Lot non précisé – ${p.organisations.nom}` : 'Lot non précisé')
+      : (p.piece_id && nomsPieces.get(p.piece_id)) || 'Sans pièce';
     parPiece.set(cle, [...(parPiece.get(cle) ?? []), p]);
   }
+  // Ordre naturel : « Lot 02 » avant « Lot 10 ».
+  const groupes = estPro
+    ? [...parPiece].sort(([a], [b]) => a.localeCompare(b, 'fr', { numeric: true }))
+    : [...parPiece];
   const annexes: { titre: string; bucket: string; path: string }[] = [];
   const dejaJoints = new Set<string>();
-  for (const [piece, liste] of parPiece) {
+  for (const [piece, liste] of groupes) {
     w.texte(piece, { taille: 11, gras: true, couleur: ACCENT, apres: 2 });
     for (const p of liste) {
       const prod = p.produits;
@@ -194,16 +209,23 @@ Deno.serve(async (req) => {
       w.texte(`${designation}${marque ? ` – ${marque}` : ''}`, { gras: true, x: MARGE + 8 });
       const details = [
         `Posé le ${dateFr(p.posee_le)}`,
+        estPro ? ((p.piece_id && nomsPieces.get(p.piece_id)) || null) : null,
         p.organisations?.nom ? `par ${p.organisations.nom}` : null,
-        p.lot ? `lot ${p.lot}` : null,
+        p.numero_lot ? `n° de lot ${p.numero_lot}` : null,
         prod?.ean ? `EAN ${prod.ean}` : null,
       ].filter(Boolean).join(' · ');
       w.texte(details, { taille: 9, couleur: GRIS, x: MARGE + 8 });
       if (prod?.entretien) w.texte(`Entretien : ${prod.entretien}`, { taille: 9, x: MARGE + 8 });
-      w.texte(
-        docs.length ? `Documents : ${docs.map((d) => LIBELLES_DOC[d.type] ?? d.nom).join(', ')} (joints en annexe)` : 'Documents : à fournir',
-        { taille: 9, x: MARGE + 8, couleur: docs.length ? ENCRE : rgb(0.7, 0.2, 0.1), apres: 6 },
-      );
+      const aFournir = manquantsPar.get(p.id) ?? [];
+      if (docs.length) {
+        w.texte(`Documents : ${docs.map((d) => LIBELLES_DOC[d.type] ?? d.nom).join(', ')} (joints en annexe)`, { taille: 9, x: MARGE + 8 });
+      }
+      w.texte(aFournir.length ? `À fournir : ${aFournir.join(', ')}` : 'Dossier complet pour ce produit', {
+        taille: 9,
+        x: MARGE + 8,
+        couleur: aFournir.length ? rgb(0.7, 0.2, 0.1) : ACCENT,
+        apres: 6,
+      });
       for (const d of docs) {
         if (dejaJoints.has(d.storage_path)) continue;
         dejaJoints.add(d.storage_path);

@@ -19,7 +19,7 @@ export default function VueChantier() {
   const chargerPoses = useCallback(async () => {
     const { data } = await supabase
       .from('poses')
-      .select('id, piece_id, posee_le, lot, designation_saisie, marque_saisie, produits(designation, marque), organisations(nom)')
+      .select('id, piece_id, posee_le, numero_lot, designation_saisie, marque_saisie, produits(designation, marque), organisations(nom)')
       .eq('chantier_id', id)
       .order('posee_le', { ascending: false })
       .limit(50);
@@ -99,7 +99,7 @@ export default function VueChantier() {
             {(p.produits?.marque ?? p.marque_saisie) ? ` – ${p.produits?.marque ?? p.marque_saisie}` : ''}
           </Texte>
           <Texte doux>
-            {[p.piece_id ? nomPiece.get(p.piece_id) : null, dateFr(p.posee_le), p.organisations?.nom, p.lot ? `lot ${p.lot}` : null]
+            {[p.piece_id ? nomPiece.get(p.piece_id) : null, dateFr(p.posee_le), p.organisations?.nom, p.numero_lot ? `lot ${p.numero_lot}` : null]
               .filter(Boolean)
               .join(' · ')}
           </Texte>

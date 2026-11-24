@@ -41,17 +41,30 @@ export type Produit = {
   ean: string;
   designation: string;
   marque: string | null;
+  /** false = ajouté par un artisan, pas encore validé par Strata ou le fabricant */
+  verifie: boolean;
 };
 
 export type Pose = {
   id: string;
   piece_id: string | null;
   posee_le: string;
-  lot: string | null;
+  numero_lot: string | null;
   designation_saisie: string | null;
   marque_saisie: string | null;
   produits: { designation: string; marque: string | null } | null;
   organisations: { nom: string } | null;
+};
+
+export type TypeDocument = 'fiche_technique' | 'notice' | 'avis_technique' | 'fdes' | 'garantie' | 'autre';
+
+export const LIBELLE_DOCUMENT: Record<TypeDocument, string> = {
+  fiche_technique: 'fiche technique',
+  notice: 'notice',
+  avis_technique: 'avis technique',
+  fdes: 'FDES',
+  garantie: 'garantie',
+  autre: 'document',
 };
 
 export type Completude = {

@@ -12,10 +12,11 @@ Un seul code pour l'iPhone, Android et le navigateur (espace web des architectes
 | Mes chantiers (complétude de chaque dossier) | Tous | — |
 | Nouveau chantier (pièces, montant, échéancier par défaut) | Artisan, architecte | — |
 | Scanner une pose (code-barres → pièce → photo → valider, hors connexion) | Artisan | Parcours 1 |
-| Dossier : complétude, pièces manquantes par entreprise, relance, réception, PDF | Tous | Parcours 2 |
+| Dossier : complétude, documents manquants par entreprise et par produit, relance, réception, PDF | Tous | Parcours 2 |
 | Réserves : saisie et levée avec photo | Architecte, maître d'ouvrage, artisan | Parcours 2 |
 | Paiements : demande par l'artisan, validation par le client | Artisan, client | Parcours 3 (versement réel en P2) |
-| Inviter par lien (rôle par chantier, valable 14 jours) | Tous | — |
+| Inviter par lien ou par code de 8 caractères (rôle et lot du marché, valable 14 jours) | Tous | — |
+| Rejoindre un chantier avec un code (« J'ai un code ») | Tous | — |
 
 Les règles métier sont appliquées par la base (voir `../supabase`), pas seulement par l'écran :
 un utilisateur ne voit que ses chantiers, seul le maître d'ouvrage prononce la réception,

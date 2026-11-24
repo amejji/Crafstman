@@ -90,14 +90,17 @@ export default function MesChantiers() {
         ) : null}
         {erreur ? <Bandeau ton="alerte">{erreur}</Bandeau> : null}
 
-        <Bouton titre="Nouveau chantier" onPress={() => router.push('/chantier/nouveau')} />
+        <View style={{ flexDirection: 'row', gap: S.s }}>
+          <Bouton titre="Nouveau chantier" onPress={() => router.push('/chantier/nouveau')} style={{ flex: 1 }} />
+          <Bouton titre="J'ai un code" variante="secondaire" onPress={() => router.push('/rejoindre')} style={{ flex: 1 }} />
+        </View>
 
         {chantiers === null ? (
           <Texte doux>Chargement…</Texte>
         ) : chantiers.length === 0 ? (
           <Carte>
             <Texte gras>Aucun chantier pour l&apos;instant</Texte>
-            <Texte doux>Créez votre premier chantier, ou ouvrez le lien d&apos;invitation reçu d&apos;un confrère.</Texte>
+            <Texte doux>Créez votre premier chantier, ou saisissez le code d&apos;invitation reçu d&apos;un confrère.</Texte>
           </Carte>
         ) : (
           chantiers.map((c) => (

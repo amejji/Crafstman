@@ -8,7 +8,7 @@ Base Postgres avec règles d'accès, stockage des fichiers et une fonction serve
 | --- | --- |
 | `migrations/20261123000000_schema_initial.sql` | Tables du cahier des charges, vues de complétude et de garanties, actions (création de chantier, invitation, réception, paiements) et règles d'accès |
 | `migrations/20261123000100_stockage.sql` | Espaces de stockage `chantiers` (photos, PDF) et `produits` (fiches techniques), avec leurs droits |
-| `functions/generer-dossier/index.ts` | Génère le DOE ou le carnet en PDF : page de garde, garanties, poses par pièce, photos, puis les fiches techniques jointes |
+| `functions/generer-dossier/index.ts` | Génère le DOE (classé par lot du marché) ou le carnet (classé par pièce) en PDF : page de garde, garanties, documents à fournir, photos, puis les fiches techniques jointes |
 | `seed.sql` | Cinq produits fictifs pour essayer le scan |
 | `tests/` | Scénario de bout en bout sur un Postgres local |
 
@@ -31,9 +31,14 @@ Base Postgres avec règles d'accès, stockage des fichiers et une fonction serve
 - Un utilisateur ne voit que les chantiers dont il est membre ; les droits sont donnés par chantier.
 - Une pose a un identifiant créé sur le téléphone : renvoyée deux fois, elle n'est enregistrée qu'une fois.
 - Scannée hors connexion, une pose ne porte que son code-barres ; le produit est retrouvé à l'arrivée.
-- Une pose est « complète » quand son produit, ou la pose elle-même, a une fiche technique ou une notice.
+- Une pose est « complète » quand tous ses documents sont là, sur le produit ou sur la pose : pour un marché pro, fiche technique,
+  notice, avis technique et FDES ; pour un particulier, fiche technique et notice. Dans les deux cas, la garantie : durée connue
+  dans la base produits, ou document de garantie joint. Le taux du dossier compte les documents présents sur les documents exigés.
+- Un produit inconnu saisi par un artisan (code-barres + désignation) entre dans la base, marqué « non vérifié » :
+  le scan suivant du même code le retrouve.
+- Une invitation se rejoint par lien ou par un code de 8 caractères ; elle peut porter le lot du marché de l'entreprise invitée.
 - Seul le maître d'ouvrage (ou le particulier) prononce la réception ; les garanties de 1, 2 et 10 ans en découlent.
-- Le solde ne peut être demandé qu'après la réception, avec un dossier à 100 % et, pour un marché pro, sans réserve ouverte.
+- Le solde ne peut être demandé qu'après la réception, avec toutes les poses complètes et, pour un marché pro, sans réserve ouverte.
   La retenue de garantie se libère un an après la réception.
 - Le rôle administrateur et la date de réception ne se modifient pas directement depuis l'appli.
 

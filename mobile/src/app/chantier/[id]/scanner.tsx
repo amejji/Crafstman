@@ -96,7 +96,7 @@ export default function Scanner() {
         ean_scanne: etat.ean,
         designation_saisie: manuel ? designation.trim() : null,
         marque_saisie: manuel ? marque.trim() || null : null,
-        lot: lot.trim() || null,
+        numero_lot: lot.trim() || null,
         photo_uri: manuel ? null : uri,
         photo_etiquette_uri: manuel ? uri : null,
       });
@@ -185,7 +185,7 @@ export default function Scanner() {
                 </Text>
                 <Texte doux>
                   {etat.produit
-                    ? [etat.produit.marque, `EAN ${etat.ean}`].filter(Boolean).join(' · ')
+                    ? [etat.produit.marque, `EAN ${etat.ean}`, etat.produit.verifie ? null : 'fiche non vérifiée'].filter(Boolean).join(' · ')
                     : 'Hors connexion : le produit sera identifié à l’envoi.'}
                 </Texte>
               </>
@@ -196,7 +196,10 @@ export default function Scanner() {
                 <Texte gras>{etat.ean ? `Produit inconnu (${etat.ean})` : 'Produit sans code-barres'}</Texte>
                 <Champ libelle="Désignation" value={designation} onChangeText={setDesignation} placeholder="Bande à joint papier" />
                 <Champ libelle="Marque" value={marque} onChangeText={setMarque} />
-                <Texte doux>La photo prise en validant sera celle de l&apos;étiquette.</Texte>
+                <Texte doux>
+                  La photo prise en validant sera celle de l&apos;étiquette.
+                  {etat.ean ? ' Le produit est ajouté à la base : le prochain scan de ce code le retrouvera.' : ''}
+                </Texte>
               </>
             ) : null}
 

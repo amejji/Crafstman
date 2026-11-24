@@ -7,11 +7,14 @@ import { Bandeau, Bouton, Carte, Chargement, Ecran, Jauge, SousTitre, Texte } fr
 import { C, S } from '@/constants/theme';
 import { dateFr } from '@/lib/format';
 import { messageErreur, supabase } from '@/lib/supabase';
-import type { Garanties } from '@/lib/types';
+import { LIBELLE_DOCUMENT, type Garanties, type TypeDocument } from '@/lib/types';
 import { useChantier } from '@/lib/use-chantier';
 
-type Manquant = { pose_id: string; designation: string; organisation_id: string | null };
-type Groupe = { organisation: string; items: Manquant[] };
+type Manquant = { pose_id: string; designation: string; organisation_id: string | null; manquant: TypeDocument };
+type Item = { pose_id: string; designation: string; documents: TypeDocument[] };
+type Groupe = { organisation: string; items: Item[] };
+
+const listeDocs = (docs: TypeDocument[]) => docs.map((d) => LIBELLE_DOCUMENT[d]).join(', ');
 
 // Parcours 2 : complétude, pièces manquantes par entreprise, relance, réception, PDF.
 export default function Dossier() {
@@ -24,7 +27,7 @@ export default function Dossier() {
 
   const charger = useCallback(async () => {
     const [{ data: manquants }, { data: g }] = await Promise.all([
-      supabase.from('poses_completude').select('pose_id, designation, organisation_id').eq('chantier_id', id).eq('complete', false),
+      supabase.from('pieces_manquantes').select('pose_id, designation, organisation_id, manquant').eq('chantier_id', id),
       supabase.from('garanties').select('*').eq('chantier_id', id).maybeSingle(),
     ]);
     setGaranties((g as Garanties | null) ?? null);
@@ -34,12 +37,17 @@ export default function Dossier() {
       ? await supabase.from('organisations').select('id, nom').in('id', ids)
       : { data: [] as { id: string; nom: string }[] };
     const noms = new Map((orgas ?? []).map((o) => [o.id, o.nom]));
-    const parOrga = new Map<string, Manquant[]>();
+    // Entreprise → pose → documents manquants
+    const parOrga = new Map<string, Map<string, Item>>();
     for (const m of liste) {
       const cle = (m.organisation_id && noms.get(m.organisation_id)) || 'Entreprise non renseignée';
-      parOrga.set(cle, [...(parOrga.get(cle) ?? []), m]);
+      const poses = parOrga.get(cle) ?? new Map<string, Item>();
+      const item = poses.get(m.pose_id) ?? { pose_id: m.pose_id, designation: m.designation, documents: [] };
+      item.documents.push(m.manquant);
+      poses.set(m.pose_id, item);
+      parOrga.set(cle, poses);
     }
-    setGroupes([...parOrga].map(([organisation, items]) => ({ organisation, items })));
+    setGroupes([...parOrga].map(([organisation, poses]) => ({ organisation, items: [...poses.values()] })));
   }, [id]);
 
   useFocusEffect(
@@ -57,7 +65,7 @@ export default function Dossier() {
   const relancer = (g: Groupe) => {
     const texte =
       `Bonjour,\n\nPour le chantier « ${chantier.nom} », il manque les documents suivants pour compléter le ${nomDossier} :\n` +
-      g.items.map((i) => `- ${i.designation}`).join('\n') +
+      g.items.map((i) => `- ${i.designation} : ${listeDocs(i.documents)}`).join('\n') +
       `\n\nMerci de les ajouter dans Strata.\n`;
     void Share.share({ message: texte, title: `Pièces manquantes – ${chantier.nom}` });
   };
@@ -100,7 +108,10 @@ export default function Dossier() {
         </View>
         <Jauge taux={completude?.taux ?? 0} />
         <Texte doux>
-          {completude?.poses_completes ?? 0} sur {completude?.poses ?? 0} poses ont leur fiche technique ou leur notice.
+          {completude?.poses_completes ?? 0} sur {completude?.poses ?? 0} poses ont tous leurs documents
+          {chantier.type === 'pro'
+            ? ' (fiche technique, notice, avis technique, FDES, garantie).'
+            : ' (fiche technique, notice, garantie).'}
         </Texte>
       </Carte>
 
@@ -116,10 +127,12 @@ export default function Dossier() {
           <Carte key={g.organisation}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: S.s }}>
               <Texte gras>{g.organisation}</Texte>
-              <Text style={{ color: C.alerte, fontWeight: '600' }}>{g.items.length} à fournir</Text>
+              <Text style={{ color: C.alerte, fontWeight: '600' }}>{g.items.reduce((n, i) => n + i.documents.length, 0)} à fournir</Text>
             </View>
             {g.items.slice(0, 6).map((i) => (
-              <Texte key={i.pose_id} doux>· {i.designation}</Texte>
+              <Texte key={i.pose_id} doux>
+                · {i.designation} : {listeDocs(i.documents)}
+              </Texte>
             ))}
             {g.items.length > 6 ? <Texte doux>et {g.items.length - 6} autre(s)</Texte> : null}
             {role === 'architecte' || estClient ? <Bouton titre="Relancer" variante="secondaire" onPress={() => relancer(g)} /> : null}

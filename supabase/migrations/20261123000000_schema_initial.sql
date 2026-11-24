@@ -72,16 +72,27 @@ create table membres_chantier (
   profil_id uuid not null references profils (id) on delete cascade,
   role role_chantier not null,
   organisation_id uuid references organisations (id) on delete set null,
+  -- Lot du marché tenu par cette entreprise (« Lot 03 – Plâtrerie ») : le DOE est classé par lot.
+  lot_marche text,
   created_at timestamptz not null default now(),
   primary key (chantier_id, profil_id)
 );
 create index on membres_chantier (profil_id);
 
+-- Code court à taper (8 caractères, sans 0/O ni 1/I/L pour éviter les confusions).
+create function generer_code_invitation() returns text
+language sql volatile as $$
+  select string_agg(substr('ABCDEFGHJKMNPQRSTUVWXYZ23456789', 1 + (get_byte(b, i) % 31), 1), '')
+  from gen_random_bytes(8) as b, generate_series(0, 7) as i;
+$$;
+
 create table invitations (
   id uuid primary key default gen_random_uuid(),
   chantier_id uuid not null references chantiers (id) on delete cascade,
   role role_chantier not null,
+  lot_marche text,
   jeton text not null unique default encode(gen_random_bytes(18), 'hex'),
+  code text not null unique default generer_code_invitation(),
   created_by uuid not null default auth.uid() references auth.users (id),
   expire_le timestamptz not null default now() + interval '14 days',
   acceptee_par uuid references profils (id),
@@ -108,6 +119,9 @@ create table produits (
   marque text,
   garantie_fabricant_mois int check (garantie_fabricant_mois is null or garantie_fabricant_mois >= 0),
   entretien text,
+  -- false = ajouté par un artisan depuis le chantier, à valider par l'équipe Strata ou le fabricant
+  verifie boolean not null default true,
+  ajoute_par uuid references auth.users (id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -124,7 +138,7 @@ create table poses (
   -- Saisie rapide quand le produit est inconnu de la base
   designation_saisie text,
   marque_saisie text,
-  lot text,
+  numero_lot text, -- numéro de lot de fabrication imprimé sur l'emballage
   photo_path text,
   photo_etiquette_path text,
   posee_le timestamptz not null default now(),
@@ -139,6 +153,17 @@ language plpgsql security definer set search_path = public as $$
 begin
   if new.produit_id is null and new.ean_scanne is not null then
     select id into new.produit_id from produits where ean = new.ean_scanne;
+    -- Produit inconnu saisi par l'artisan : il entre dans la base, marqué « non vérifié »,
+    -- pour que le prochain scan du même code le retrouve.
+    if new.produit_id is null and new.designation_saisie is not null and new.ean_scanne ~ '^[0-9]{8,14}$' then
+      insert into produits (ean, designation, marque, verifie, ajoute_par)
+      values (new.ean_scanne, new.designation_saisie, new.marque_saisie, false, auth.uid())
+      on conflict (ean) do nothing
+      returning id into new.produit_id;
+      if new.produit_id is null then
+        select id into new.produit_id from produits where ean = new.ean_scanne;
+      end if;
+    end if;
   end if;
   return new;
 end $$;
@@ -237,29 +262,62 @@ $$;
 -- Vues calculées
 -- ---------------------------------------------------------------------------
 
--- Une pose est complète si son produit (ou la pose elle-même) a au moins une
--- fiche technique ou une notice.
+-- Documents exigés pour chaque pose. La garantie est contrôlée à part :
+-- durée connue dans la base produits, ou document de garantie joint.
+create function docs_requis(p_type type_chantier) returns type_document[]
+language sql immutable as $$
+  select case when p_type = 'pro'
+    then array['fiche_technique', 'notice', 'avis_technique', 'fdes']::type_document[]
+    else array['fiche_technique', 'notice']::type_document[]
+  end;
+$$;
+
+-- Une ligne par document manquant.
+create view pieces_manquantes with (security_invoker = true) as
+with p as (
+  select po.id as pose_id, po.chantier_id, po.organisation_id, po.produit_id,
+         coalesce(pr.designation, po.designation_saisie, 'EAN ' || po.ean_scanne) as designation,
+         pr.garantie_fabricant_mois, c.type as type_chantier
+  from poses po
+  join chantiers c on c.id = po.chantier_id
+  left join produits pr on pr.id = po.produit_id
+)
+select p.pose_id, p.chantier_id, p.organisation_id, p.designation, req.type_doc as manquant
+from p
+cross join lateral unnest(docs_requis(p.type_chantier)) as req (type_doc)
+where not exists (
+  select 1 from documents d
+  where d.type = req.type_doc and ((p.produit_id is not null and d.produit_id = p.produit_id) or d.pose_id = p.pose_id)
+)
+union all
+select p.pose_id, p.chantier_id, p.organisation_id, p.designation, 'garantie'::type_document
+from p
+where p.garantie_fabricant_mois is null
+  and not exists (
+    select 1 from documents d
+    where d.type = 'garantie' and ((p.produit_id is not null and d.produit_id = p.produit_id) or d.pose_id = p.pose_id)
+  );
+
 create view poses_completude with (security_invoker = true) as
 select
-  p.id as pose_id,
-  p.chantier_id,
-  p.organisation_id,
-  coalesce(pr.designation, p.designation_saisie, 'EAN ' || p.ean_scanne) as designation,
-  exists (
-    select 1 from documents d
-    where (d.produit_id = p.produit_id or d.pose_id = p.id)
-      and d.type in ('fiche_technique', 'notice')
-  ) as complete
-from poses p
-left join produits pr on pr.id = p.produit_id;
+  po.id as pose_id,
+  po.chantier_id,
+  po.organisation_id,
+  coalesce(pr.designation, po.designation_saisie, 'EAN ' || po.ean_scanne) as designation,
+  (select count(*) from pieces_manquantes m where m.pose_id = po.id)::int as manquants,
+  not exists (select 1 from pieces_manquantes m where m.pose_id = po.id) as complete
+from poses po
+left join produits pr on pr.id = po.produit_id;
 
+-- Taux = documents présents / documents exigés (chaque pose exige ses documents + la garantie).
 create view chantiers_completude with (security_invoker = true) as
 select
   c.id as chantier_id,
   count(pc.pose_id)::int as poses,
   count(pc.pose_id) filter (where pc.complete)::int as poses_completes,
   case when count(pc.pose_id) = 0 then 0
-       else round(100.0 * count(pc.pose_id) filter (where pc.complete) / count(pc.pose_id))::int
+       else round(100.0 * (count(pc.pose_id) * (cardinality(docs_requis(c.type)) + 1) - coalesce(sum(pc.manquants), 0))
+                  / (count(pc.pose_id) * (cardinality(docs_requis(c.type)) + 1)))::int
   end as taux,
   (select count(*) from reserves r where r.chantier_id = c.id and r.statut = 'ouverte')::int as reserves_ouvertes
 from chantiers c
@@ -342,7 +400,9 @@ begin
   if auth.uid() is null then
     raise exception 'Connexion requise';
   end if;
-  select * into v_inv from invitations where jeton = p_jeton for update;
+  select * into v_inv from invitations
+  where jeton = p_jeton or code = upper(regexp_replace(p_jeton, '[^A-Za-z0-9]', '', 'g'))
+  for update;
   if not found then
     raise exception 'Invitation introuvable';
   end if;
@@ -354,8 +414,8 @@ begin
   end if;
 
   select organisation_id into v_org from profils where id = auth.uid();
-  insert into membres_chantier (chantier_id, profil_id, role, organisation_id)
-  values (v_inv.chantier_id, auth.uid(), v_inv.role, v_org)
+  insert into membres_chantier (chantier_id, profil_id, role, organisation_id, lot_marche)
+  values (v_inv.chantier_id, auth.uid(), v_inv.role, v_org, v_inv.lot_marche)
   on conflict (chantier_id, profil_id) do nothing;
 
   update invitations set acceptee_par = auth.uid(), acceptee_le = now() where id = v_inv.id;
@@ -398,7 +458,8 @@ begin
     if v_chantier.date_reception is null then
       raise exception 'La réception n''est pas encore prononcée';
     end if;
-    if v_compl.poses = 0 or v_compl.taux < 100 then
+    -- Sur les poses, pas sur le taux : 99,6 % s'arrondit à 100 %.
+    if v_compl.poses = 0 or v_compl.poses_completes < v_compl.poses then
       raise exception 'Le dossier est incomplet (% %%)', v_compl.taux;
     end if;
     if v_chantier.type = 'pro' and v_compl.reserves_ouvertes > 0 then

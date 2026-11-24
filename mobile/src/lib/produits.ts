@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import type { Produit } from './types';
 
-const CLE_CACHE = 'strata.produits-vus.v1';
+const CLE_CACHE = 'strata.produits-vus.v2';
 const cleDernierePiece = (chantierId: string) => `strata.derniere-piece.${chantierId}`;
 
 type Cache = Record<string, Produit | null>;
@@ -27,7 +27,7 @@ export async function chercherProduit(ean: string): Promise<ResultatRecherche> {
   try {
     const { data, error } = await supabase
       .from('produits')
-      .select('id, ean, designation, marque')
+      .select('id, ean, designation, marque, verifie')
       .eq('ean', ean)
       .maybeSingle();
     if (error) throw error;

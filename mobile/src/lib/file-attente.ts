@@ -20,7 +20,7 @@ export type PoseEnAttente = {
   ean_scanne: string | null;
   designation_saisie: string | null;
   marque_saisie: string | null;
-  lot: string | null;
+  numero_lot: string | null;
   posee_le: string;
   photo_uri: string | null;
   photo_etiquette_uri: string | null;
@@ -123,7 +123,7 @@ async function envoyerUne(p: PoseEnAttente) {
       ean_scanne: p.ean_scanne,
       designation_saisie: p.designation_saisie,
       marque_saisie: p.marque_saisie,
-      lot: p.lot,
+      numero_lot: p.numero_lot,
       posee_le: p.posee_le,
       photo_path,
       photo_etiquette_path,
